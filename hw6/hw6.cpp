@@ -451,9 +451,15 @@ public:
     void printTree(BTreeNode* node, int level) {
         if (!node) return;
         std::cout << std::string(level * 4, ' ');
-        for (int key : node->keys) std::cout << key << " ";
-        std::cout << "\n";
-        for (BTreeNode* child : node->children) printTree(child, level + 1);
+        for (int key : node->keys) {
+        std::cout << key << " ";
+        std::cout << "\n"; // 在這裡添加換行符號
+        }
+        for (BTreeNode* child : node->children) {
+            if (child) {
+                printTree(child, level + 1);
+            }
+        }
     }
 
     void printTree() {
