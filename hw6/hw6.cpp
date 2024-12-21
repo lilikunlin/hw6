@@ -104,6 +104,27 @@ public:
     void display() {
         display(root, 0);
     }
+
+    // MWayNode 的 removeKey 函式
+    bool removeKey(MWayNode* node, int key) {
+        if (!node) return false;
+
+        // 在當前節點查找鍵值
+        auto it = find(node->keys.begin(), node->keys.end(), key);
+        if (it != node->keys.end()) {
+            node->keys.erase(it); // 刪除鍵值
+            return true;
+        }
+
+        // 遞迴檢查子節點
+        for (MWayNode* child : node->children) {
+            if (removeKey(child, key)) {
+                return true;
+            }
+        }
+
+        return false; // 如果沒有找到鍵值，返回 false
+    }
 };
 
 // B-Tree 的節點結構
@@ -203,6 +224,29 @@ public:
     // 顯示樹的內容
     void display() {
         display(root, 0);
+    }
+
+    // BTreeNode 的 removeKey 函式
+    bool removeKey(BTreeNode* node, int key) {
+        if (!node) return false;
+
+        // 在當前節點查找鍵值
+        auto it = find(node->keys.begin(), node->keys.end(), key);
+        if (it != node->keys.end()) {
+            node->keys.erase(it); // 刪除鍵值
+            return true;
+        }
+
+        // 如果節點不是葉節點，遞迴檢查子節點
+        if (!node->isLeaf) {
+            for (BTreeNode* child : node->children) {
+                if (removeKey(child, key)) {
+                    return true;
+                }
+            }
+        }
+
+        return false; // 如果沒有找到鍵值，返回 false
     }
 };
 
