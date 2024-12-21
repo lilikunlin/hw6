@@ -1,346 +1,344 @@
 ﻿#include <iostream>
 #include <vector>
-#include <sstream>
+#include <queue>
 #include <algorithm>
 #include <iomanip>
-using namespace std;
 
-// M-way 搜尋樹的節點結構
+// m-way 搜尋樹的節點結構
 struct MWayNode {
-    vector<int> keys; // 儲存節點的鍵值
-    vector<MWayNode*> children; // 儲存子節點指標
-    MWayNode(int m) {
+    int m; // 每個節點最多的鍵值數量
+    std::vector<int> keys;
+    std::vector<MWayNode*> children;
+
+    MWayNode(int m) : m(m) {
         keys.reserve(m - 1);
-        children.reserve(m);
+        children.resize(m, nullptr);
     }
 };
 
-// M-way 搜尋樹的類別
-class MWaySearchTree {
-    int m; // M-way 搜尋樹的最大子節點數
-    MWayNode* root; // 樹的根節點
+// m-way 搜尋樹類別
+class MWayTree {
+    MWayNode* root;
+    int m;
 
-    // 顯示樹的遞迴函數
-    void display(MWayNode* node, int level) {
+    void printTree(MWayNode* node, int level) {
         if (!node) return;
+        std::cout << std::string(level * 4, ' ');
+        for (int key : node->keys) std::cout << key << " ";
+        std::cout << "\n";
+        for (MWayNode* child : node->children) printTree(child, level + 1);
+    }
 
-        cout << string(level * 4, ' ');
-        for (int key : node->keys) cout << key << " ";
-        cout << endl;
+    void splitChild(MWayNode* parent, int index) {
+        MWayNode* child = parent->children[index];
+        MWayNode* newChild = new MWayNode(m);
 
-        for (MWayNode* child : node->children) {
-            display(child, level + 1);
+        int mid = (m - 1) / 2;
+        parent->keys.insert(parent->keys.begin() + index, child->keys[mid]);
+
+        for (int i = mid + 1; i < m - 1; i++) {
+            newChild->keys.push_back(child->keys[i]);
+        }
+        child->keys.resize(mid);
+
+        if (!child->children[0]) {
+            for (int i = mid + 1; i < m; i++) {
+                newChild->children[i - mid - 1] = child->children[i];
+                child->children[i] = nullptr;
+            }
+        }
+
+        parent->children.insert(parent->children.begin() + index + 1, newChild);
+    }
+
+    void insertNonFull(MWayNode* node, int key) {
+        int i = static_cast<int>(node->keys.size()) - 1;
+
+        if (!node->children[0]) {
+            node->keys.push_back(0);
+            while (i >= 0 && key < node->keys[i]) {
+                node->keys[i + 1] = node->keys[i];
+                i--;
+            }
+            node->keys[i + 1] = key;
+        }
+        else {
+            while (i >= 0 && key < node->keys[i]) {
+                i--;
+            }
+            i++;
+
+            if (static_cast<int>(node->children[i]->keys.size()) == m - 1) {
+                splitChild(node, i);
+                if (key > node->keys[i]) {
+                    i++;
+                }
+            }
+            insertNonFull(node->children[i], key);
         }
     }
 
-    // 分裂節點
-    void splitNode(MWayNode* node) {
-        MWayNode* newNode = new MWayNode(m);
-        int mid = m / 2;
-        int midKey = node->keys[mid];
+    void merge(MWayNode* parent, int index) {
+        MWayNode* left = parent->children[index];
+        MWayNode* right = parent->children[index + 1];
+        left->keys.push_back(parent->keys[index]);
 
-        // 分割鍵值和子節點
-        vector<int> leftKeys(node->keys.begin(), node->keys.begin() + mid);
-        vector<int> rightKeys(node->keys.begin() + mid + 1, node->keys.end());
-        node->keys = leftKeys;
+        for (int key : right->keys) {
+            left->keys.push_back(key);
+        }
 
-        newNode->keys = rightKeys;
-        node->children.push_back(newNode);
-        node->keys.push_back(midKey);
+        for (MWayNode* child : right->children) {
+            if (child) {
+                left->children[static_cast<int>(left->keys.size())] = child;
+            }
+        }
+
+        parent->keys.erase(parent->keys.begin() + index);
+        parent->children.erase(parent->children.begin() + index + 1);
+
+        delete right;
     }
 
-    // 插入鍵值的遞迴函數
-    void insertKey(MWayNode* node, int key) {
-        if (node->children.empty()) {
-            node->keys.push_back(key);
-            sort(node->keys.begin(), node->keys.end());
-            if (node->keys.size() >= m) {
-                splitNode(node);
+    void removeFromNode(MWayNode* node, int key) {
+        int index = static_cast<int>(std::lower_bound(node->keys.begin(), node->keys.end(), key) - node->keys.begin());
+
+        if (index < static_cast<int>(node->keys.size()) && node->keys[index] == key) {
+            if (!node->children[0]) {
+                node->keys.erase(node->keys.begin() + index);
+            }
+            else {
+                MWayNode* predNode = node->children[index];
+                while (!predNode->children[0]) {
+                    predNode = predNode->children.back();
+                }
+                int predKey = predNode->keys.back();
+                removeFromNode(predNode, predKey);
+                node->keys[index] = predKey;
             }
         }
         else {
-            for (size_t i = 0; i < node->keys.size(); ++i) {
-                if (key < node->keys[i]) {
-                    insertKey(node->children[i], key);
-                    return;
+            MWayNode* child = node->children[index];
+
+            if (static_cast<int>(child->keys.size()) == (m - 1) / 2) {
+                if (index > 0 && static_cast<int>(node->children[index - 1]->keys.size()) > (m - 1) / 2) {
+                    MWayNode* leftSibling = node->children[index - 1];
+                    child->keys.insert(child->keys.begin(), node->keys[index - 1]);
+                    node->keys[index - 1] = leftSibling->keys.back();
+                    leftSibling->keys.pop_back();
+
+                    if (!leftSibling->children[0]) {
+                        child->children.insert(child->children.begin(), leftSibling->children.back());
+                        leftSibling->children.pop_back();
+                    }
+                }
+                else if (index < static_cast<int>(node->keys.size()) && static_cast<int>(node->children[index + 1]->keys.size()) >(m - 1) / 2) {
+                    MWayNode* rightSibling = node->children[index + 1];
+                    child->keys.push_back(node->keys[index]);
+                    node->keys[index] = rightSibling->keys[0];
+                    rightSibling->keys.erase(rightSibling->keys.begin());
+
+                    if (!rightSibling->children[0]) {
+                        child->children.push_back(rightSibling->children[0]);
+                        rightSibling->children.erase(rightSibling->children.begin());
+                    }
+                }
+                else {
+                    if (index < static_cast<int>(node->keys.size())) {
+                        merge(node, index);
+                    }
+                    else {
+                        merge(node, index - 1);
+                    }
                 }
             }
-            insertKey(node->children.back(), key);
+
+            removeFromNode(child, key);
         }
     }
 
 public:
-    MWaySearchTree(int m) : m(m), root(nullptr) {}
+    MWayTree(int m) : root(nullptr), m(m) {}
 
-    // 插入資料到樹
     void insert(int key) {
         if (!root) {
             root = new MWayNode(m);
             root->keys.push_back(key);
+            return;
         }
-        else {
-            insertKey(root, key);
+
+        if (static_cast<int>(root->keys.size()) == m - 1) {
+            MWayNode* newRoot = new MWayNode(m);
+            newRoot->children[0] = root;
+            splitChild(newRoot, 0);
+            root = newRoot;
         }
+
+        insertNonFull(root, key);
     }
 
-    // 插入多個資料到樹
-    void insertMultiple(const vector<int>& keys) {
-        for (int key : keys) {
-            insert(key);
-        }
-    }
-
-    // 刪除資料
     void remove(int key) {
-        if (removeKey(root, key)) {
-            cout << "成功刪除鍵值 " << key << "\n";
-        }
-        else {
-            cout << "無法找到鍵值 " << key << "\n";
+        if (!root) return;
+
+        removeFromNode(root, key);
+
+        if (root->keys.empty() && root->children[0]) {
+            MWayNode* oldRoot = root;
+            root = root->children[0];
+            delete oldRoot;
         }
     }
 
-    // 顯示樹的內容
-    void display() {
-        display(root, 0);
-    }
-
-    // MWayNode 的 removeKey 函式
-    bool removeKey(MWayNode* node, int key) {
-        if (!node) return false;
-
-        // 在當前節點查找鍵值
-        auto it = find(node->keys.begin(), node->keys.end(), key);
-        if (it != node->keys.end()) {
-            node->keys.erase(it); // 刪除鍵值
-            return true;
-        }
-
-        // 遞迴檢查子節點
-        for (MWayNode* child : node->children) {
-            if (removeKey(child, key)) {
-                return true;
-            }
-        }
-
-        return false; // 如果沒有找到鍵值，返回 false
+    void printTree() {
+        printTree(root, 0);
     }
 };
 
-// B-Tree 的節點結構
+// B-tree 的節點結構
 struct BTreeNode {
-    vector<int> keys; // 儲存節點的鍵值
-    vector<BTreeNode*> children; // 儲存子節點指標
-    bool isLeaf; // 是否為葉節點
+    int t;
+    std::vector<int> keys;
+    std::vector<BTreeNode*> children;
+    bool leaf;
 
-    BTreeNode(bool isLeaf) : isLeaf(isLeaf) {}
+    BTreeNode(int t, bool leaf) : t(t), leaf(leaf) {
+        keys.reserve(2 * t - 1);
+        children.resize(2 * t, nullptr);
+    }
 };
 
-// B-Tree 的類別
+// B-tree 類別
 class BTree {
-    int t; // B-Tree 的最小度數
-    BTreeNode* root; // 樹的根節點
+    BTreeNode* root;
+    int t;
 
-    // 顯示樹的遞迴函數
-    void display(BTreeNode* node, int level) {
-        if (!node) return;
+    void splitChild(BTreeNode* node, int i) {
+        BTreeNode* z = new BTreeNode(t, node->children[i]->leaf);
+        BTreeNode* y = node->children[i];
+        z->keys.assign(y->keys.begin() + t, y->keys.end());
+        y->keys.resize(t - 1);
 
-        cout << string(level * 4, ' ');
-        for (int key : node->keys) cout << key << " ";
-        cout << endl;
-
-        for (BTreeNode* child : node->children) {
-            display(child, level + 1);
+        if (!y->leaf) {
+            z->children.assign(y->children.begin() + t, y->children.end());
+            y->children.resize(t);
         }
+
+        node->children.insert(node->children.begin() + i + 1, z);
+        node->keys.insert(node->keys.begin() + i, y->keys[t - 1]);
     }
 
-    // 插入鍵值的遞迴函數
-    void insertKey(BTreeNode* node, int key) {
-        if (node->isLeaf) {
-            node->keys.push_back(key);
-            sort(node->keys.begin(), node->keys.end());
-            if (node->keys.size() >= 2 * t - 1) {
-                splitNode(node);
+    void insertNonFull(BTreeNode* node, int k) {
+        int i = static_cast<int>(node->keys.size()) - 1;
+
+        if (node->leaf) {
+            node->keys.push_back(0);
+            while (i >= 0 && k < node->keys[i]) {
+                node->keys[i + 1] = node->keys[i];
+                i--;
             }
+            node->keys[i + 1] = k;
         }
         else {
-            for (size_t i = 0; i < node->keys.size(); ++i) {
-                if (key < node->keys[i]) {
-                    insertKey(node->children[i], key);
-                    return;
+            while (i >= 0 && k < node->keys[i]) {
+                i--;
+            }
+            i++;
+
+            if (static_cast<int>(node->children[i]->keys.size()) == 2 * t - 1) {
+                splitChild(node, i);
+                if (k > node->keys[i]) {
+                    i++;
                 }
             }
-            insertKey(node->children.back(), key);
+            insertNonFull(node->children[i], k);
         }
-    }
-
-    // 分裂節點
-    void splitNode(BTreeNode* node) {
-        BTreeNode* newNode = new BTreeNode(node->isLeaf);
-        int mid = t - 1;
-        int midKey = node->keys[mid];
-
-        // 分割鍵值和子節點
-        vector<int> leftKeys(node->keys.begin(), node->keys.begin() + mid);
-        vector<int> rightKeys(node->keys.begin() + mid + 1, node->keys.end());
-        node->keys = leftKeys;
-
-        newNode->keys = rightKeys;
-        node->children.push_back(newNode);
-        node->keys.push_back(midKey);
     }
 
 public:
-    BTree(int t) : t(t), root(nullptr) {}
+    BTree(int t) : root(nullptr), t(t) {}
 
-    // 插入資料到樹
-    void insert(int key) {
+    void insert(int k) {
         if (!root) {
-            root = new BTreeNode(true);
-            root->keys.push_back(key);
+            root = new BTreeNode(t, true);
+            root->keys.push_back(k);
+            return;
         }
-        else {
-            insertKey(root, key);
+
+        if (static_cast<int>(root->keys.size()) == 2 * t - 1) {
+            BTreeNode* newRoot = new BTreeNode(t, false);
+            newRoot->children[0] = root;
+            splitChild(newRoot, 0);
+            root = newRoot;
         }
+
+        insertNonFull(root, k);
     }
 
-    // 插入多個資料到樹
-    void insertMultiple(const vector<int>& keys) {
-        for (int key : keys) {
-            insert(key);
-        }
+    void printTree(BTreeNode* node, int level) {
+        if (!node) return;
+        std::cout << std::string(level * 4, ' ');
+        for (int key : node->keys) std::cout << key << " ";
+        std::cout << "\n";
+        for (BTreeNode* child : node->children) printTree(child, level + 1);
     }
 
-    // 刪除資料
-    void remove(int key) {
-        if (removeKey(root, key)) {
-            cout << "成功刪除鍵值 " << key << "\n";
-        }
-        else {
-            cout << "無法找到鍵值 " << key << "\n";
-        }
-    }
-
-    // 顯示樹的內容
-    void display() {
-        display(root, 0);
-    }
-
-    // BTreeNode 的 removeKey 函式
-    bool removeKey(BTreeNode* node, int key) {
-        if (!node) return false;
-
-        // 在當前節點查找鍵值
-        auto it = find(node->keys.begin(), node->keys.end(), key);
-        if (it != node->keys.end()) {
-            node->keys.erase(it); // 刪除鍵值
-            return true;
-        }
-
-        // 如果節點不是葉節點，遞迴檢查子節點
-        if (!node->isLeaf) {
-            for (BTreeNode* child : node->children) {
-                if (removeKey(child, key)) {
-                    return true;
-                }
-            }
-        }
-
-        return false; // 如果沒有找到鍵值，返回 false
+    void printTree() {
+        printTree(root, 0);
     }
 };
 
 int main() {
     int m, t;
-    cout << "請輸入 M-way 搜尋樹的最大子節點數 (m): ";
-    cin >> m;
+    std::cout << "請輸入 m-way 搜尋樹的階數: ";
+    std::cin >> m;
+    MWayTree mwayTree(m);
 
-    cout << "請輸入 B-Tree 的最小度數 (t): ";
-    cin >> t;
+    std::cout << "請輸入 B-tree 的最小度數: ";
+    std::cin >> t;
+    BTree bTree(t);
 
-    MWaySearchTree mwayTree(m);
-    BTree btree(t);
+    int choice, value;
+    do {
+        std::cout << "\n功能選單:\n";
+        std::cout << "1. 插入到 m-way 搜尋樹\n";
+        std::cout << "2. 從 m-way 搜尋樹刪除\n";
+        std::cout << "3. 顯示 m-way 搜尋樹\n";
+        std::cout << "4. 插入到 B-tree\n";
+        std::cout << "5. 顯示 B-tree\n";
+        std::cout << "6. 離開\n";
+        std::cout << "請選擇功能: ";
+        std::cin >> choice;
 
-    int choice;
-    while (true) {
-        cout << "\n功能選單:\n";
-        cout << "1. 插入資料到 M-way 搜尋樹\n";
-        cout << "2. 插入資料到 B-Tree\n";
-        cout << "3. 插入多筆資料到 M-way 搜尋樹\n";
-        cout << "4. 插入多筆資料到 B-Tree\n";
-        cout << "5. 刪除 M-way 搜尋樹中的資料\n";
-        cout << "6. 刪除 B-Tree 中的資料\n";
-        cout << "7. 顯示 M-way 搜尋樹\n";
-        cout << "8. 顯示 B-Tree\n";
-        cout << "9. 結束程式\n";
-        cout << "請選擇功能: ";
-        cin >> choice;
-
-        if (choice == 1) {
-            int key;
-            cout << "請輸入要插入到 M-way 搜尋樹的資料: ";
-            cin >> key;
-            mwayTree.insert(key);
-        }
-        else if (choice == 2) {
-            int key;
-            cout << "請輸入要插入到 B-Tree 的資料: ";
-            cin >> key;
-            btree.insert(key);
-        }
-        else if (choice == 3) {
-            string input;
-            cout << "請輸入要插入到 M-way 搜尋樹的多筆資料（以空格分隔）: ";
-            cin.ignore();
-            getline(cin, input);
-            stringstream ss(input);
-            vector<int> keys;
-            int key;
-            while (ss >> key) {
-                keys.push_back(key);
-            }
-            mwayTree.insertMultiple(keys);
-        }
-        else if (choice == 4) {
-            string input;
-            cout << "請輸入要插入到 B-Tree 的多筆資料（以空格分隔）: ";
-            cin.ignore();
-            getline(cin, input);
-            stringstream ss(input);
-            vector<int> keys;
-            int key;
-            while (ss >> key) {
-                keys.push_back(key);
-            }
-            btree.insertMultiple(keys);
-        }
-        else if (choice == 5) {
-            int key;
-            cout << "請輸入要刪除的 M-way 搜尋樹資料: ";
-            cin >> key;
-            mwayTree.remove(key);
-        }
-        else if (choice == 6) {
-            int key;
-            cout << "請輸入要刪除的 B-Tree 資料: ";
-            cin >> key;
-            btree.remove(key);
-        }
-        else if (choice == 7) {
-            cout << "M-way 搜尋樹:\n";
-            mwayTree.display();
-        }
-        else if (choice == 8) {
-            cout << "B-Tree:\n";
-            btree.display();
-        }
-        else if (choice == 9) {
+        switch (choice) {
+        case 1:
+            std::cout << "請輸入要插入的值: ";
+            std::cin >> value;
+            mwayTree.insert(value);
             break;
+        case 2:
+            std::cout << "請輸入要刪除的值: ";
+            std::cin >> value;
+            mwayTree.remove(value);
+            break;
+        case 3:
+            std::cout << "m-way 搜尋樹:\n";
+            mwayTree.printTree();
+            break;
+        case 4:
+            std::cout << "請輸入要插入到 B-tree 的值: ";
+            std::cin >> value;
+            bTree.insert(value);
+            break;
+        case 5:
+            std::cout << "B-tree:\n";
+            bTree.printTree();
+            break;
+        case 6:
+            std::cout << "程式結束...\n";
+            break;
+        default:
+            std::cout << "無效的選項，請重新選擇。\n";
         }
-        else {
-            cout << "無效的選項，請重新選擇。\n";
-        }
-    }
+    } while (choice != 6);
 
     return 0;
 }
