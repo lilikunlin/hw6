@@ -29,6 +29,59 @@ class MWayTree {
         for (MWayNode* child : node->children) printTree(child, level + 1);
     }
 
+    int getPredecessor(MWayNode* node, int index) {
+        MWayNode* current = node->children[index];
+        while (current->children[0]) {
+            current = current->children.back();
+        }
+        return current->keys.back();
+    }
+
+    void fill(MWayNode* node, int index) {
+        if (index != 0 && static_cast<int>(node->children[index - 1]->keys.size()) >= (m + 1) / 2) {
+            borrowFromPrev(node, index);
+        }
+        else if (index != static_cast<int>(node->keys.size()) && static_cast<int>(node->children[index + 1]->keys.size()) >= (m + 1) / 2) {
+            borrowFromNext(node, index);
+        }
+        else {
+            if (index != static_cast<int>(node->keys.size())) {
+                merge(node, index);
+            }
+            else {
+                merge(node, index - 1);
+            }
+        }
+    }
+
+    void borrowFromPrev(MWayNode* node, int index) {
+        MWayNode* child = node->children[index];
+        MWayNode* sibling = node->children[index - 1];
+
+        child->keys.insert(child->keys.begin(), node->keys[index - 1]);
+        node->keys[index - 1] = sibling->keys.back();
+        sibling->keys.pop_back();
+
+        if (!sibling->children[0]) {
+            child->children.insert(child->children.begin(), sibling->children.back());
+            sibling->children.pop_back();
+        }
+    }
+
+    void borrowFromNext(MWayNode* node, int index) {
+        MWayNode* child = node->children[index];
+        MWayNode* sibling = node->children[index + 1];
+
+        child->keys.push_back(node->keys[index]);
+        node->keys[index] = sibling->keys[0];
+        sibling->keys.erase(sibling->keys.begin());
+
+        if (!sibling->children[0]) {
+            child->children.push_back(sibling->children[0]);
+            sibling->children.erase(sibling->children.begin());
+        }
+    }
+
     void splitChild(MWayNode* parent, int index) {
         MWayNode* child = parent->children[index];
         MWayNode* newChild = new MWayNode(m);
@@ -78,27 +131,6 @@ class MWayTree {
         }
     }
 
-    void merge(MWayNode* parent, int index) {
-        MWayNode* left = parent->children[index];
-        MWayNode* right = parent->children[index + 1];
-        left->keys.push_back(parent->keys[index]);
-
-        for (int key : right->keys) {
-            left->keys.push_back(key);
-        }
-
-        for (MWayNode* child : right->children) {
-            if (child) {
-                left->children[static_cast<int>(left->keys.size())] = child;
-            }
-        }
-
-        parent->keys.erase(parent->keys.begin() + index);
-        parent->children.erase(parent->children.begin() + index + 1);
-
-        delete right;
-    }
-
     void removeFromNode(MWayNode* node, int key) {
         int index = static_cast<int>(std::lower_bound(node->keys.begin(), node->keys.end(), key) - node->keys.begin());
 
@@ -107,53 +139,46 @@ class MWayTree {
                 node->keys.erase(node->keys.begin() + index);
             }
             else {
-                MWayNode* predNode = node->children[index];
-                while (!predNode->children[0]) {
-                    predNode = predNode->children.back();
-                }
-                int predKey = predNode->keys.back();
-                removeFromNode(predNode, predKey);
-                node->keys[index] = predKey;
+                int pred = getPredecessor(node, index);
+                node->keys[index] = pred;
+                removeFromNode(node->children[index], pred);
             }
         }
         else {
-            MWayNode* child = node->children[index];
+            if (!node->children[0]) return;
 
-            if (static_cast<int>(child->keys.size()) == (m - 1) / 2) {
-                if (index > 0 && static_cast<int>(node->children[index - 1]->keys.size()) > (m - 1) / 2) {
-                    MWayNode* leftSibling = node->children[index - 1];
-                    child->keys.insert(child->keys.begin(), node->keys[index - 1]);
-                    node->keys[index - 1] = leftSibling->keys.back();
-                    leftSibling->keys.pop_back();
+            bool atLastChild = (index == static_cast<int>(node->keys.size()));
 
-                    if (!leftSibling->children[0]) {
-                        child->children.insert(child->children.begin(), leftSibling->children.back());
-                        leftSibling->children.pop_back();
-                    }
-                }
-                else if (index < static_cast<int>(node->keys.size()) && static_cast<int>(node->children[index + 1]->keys.size()) >(m - 1) / 2) {
-                    MWayNode* rightSibling = node->children[index + 1];
-                    child->keys.push_back(node->keys[index]);
-                    node->keys[index] = rightSibling->keys[0];
-                    rightSibling->keys.erase(rightSibling->keys.begin());
-
-                    if (!rightSibling->children[0]) {
-                        child->children.push_back(rightSibling->children[0]);
-                        rightSibling->children.erase(rightSibling->children.begin());
-                    }
-                }
-                else {
-                    if (index < static_cast<int>(node->keys.size())) {
-                        merge(node, index);
-                    }
-                    else {
-                        merge(node, index - 1);
-                    }
-                }
+            if (static_cast<int>(node->children[index]->keys.size()) < (m + 1) / 2) {
+                fill(node, index);
             }
 
-            removeFromNode(child, key);
+            if (atLastChild && index > static_cast<int>(node->keys.size())) {
+                removeFromNode(node->children[index - 1], key);
+            }
+            else {
+                removeFromNode(node->children[index], key);
+            }
         }
+    }
+
+    void merge(MWayNode* parent, int index) {
+        MWayNode* child = parent->children[index];
+        MWayNode* sibling = parent->children[index + 1];
+
+        child->keys.push_back(parent->keys[index]);
+        parent->keys.erase(parent->keys.begin() + index);
+
+        for (int key : sibling->keys) {
+            child->keys.push_back(key);
+        }
+
+        for (MWayNode* subChild : sibling->children) {
+            child->children.push_back(subChild);
+        }
+
+        parent->children.erase(parent->children.begin() + index + 1);
+        delete sibling;
     }
 
 public:
@@ -253,6 +278,139 @@ class BTree {
         }
     }
 
+    void remove(BTreeNode* node, int k) {
+        int idx = std::lower_bound(node->keys.begin(), node->keys.end(), k) - node->keys.begin();
+
+        if (idx < node->keys.size() && node->keys[idx] == k) {
+            if (node->leaf) {
+                node->keys.erase(node->keys.begin() + idx);
+            }
+            else {
+                if (node->children[idx]->keys.size() >= t) {
+                    int pred = getPredecessor(node, idx);
+                    node->keys[idx] = pred;
+                    remove(node->children[idx], pred);
+                }
+                else if (node->children[idx + 1]->keys.size() >= t) {
+                    int succ = getSuccessor(node, idx);
+                    node->keys[idx] = succ;
+                    remove(node->children[idx + 1], succ);
+                }
+                else {
+                    merge(node, idx);
+                    remove(node->children[idx], k);
+                }
+            }
+        }
+        else {
+            if (node->leaf) {
+                std::cout << "Key " << k << " not found in the tree.\n";
+                return;
+            }
+
+            bool flag = (idx == node->keys.size());
+
+            if (node->children[idx]->keys.size() < t) {
+                fill(node, idx);
+            }
+
+            if (flag && idx > node->keys.size()) {
+                remove(node->children[idx - 1], k);
+            }
+            else {
+                remove(node->children[idx], k);
+            }
+        }
+    }
+
+    int getPredecessor(BTreeNode* node, int idx) {
+        BTreeNode* cur = node->children[idx];
+        while (!cur->leaf) {
+            cur = cur->children[cur->keys.size()];
+        }
+        return cur->keys[cur->keys.size() - 1];
+    }
+
+    int getSuccessor(BTreeNode* node, int idx) {
+        BTreeNode* cur = node->children[idx + 1];
+        while (!cur->leaf) {
+            cur = cur->children[0];
+        }
+        return cur->keys[0];
+    }
+
+    void fill(BTreeNode* node, int idx) {
+        if (idx != 0 && node->children[idx - 1]->keys.size() >= t) {
+            borrowFromPrev(node, idx);
+        }
+        else if (idx != node->keys.size() && node->children[idx + 1]->keys.size() >= t) {
+            borrowFromNext(node, idx);
+        }
+        else {
+            if (idx != node->keys.size()) {
+                merge(node, idx);
+            }
+            else {
+                merge(node, idx - 1);
+            }
+        }
+    }
+
+    void borrowFromPrev(BTreeNode* node, int idx) {
+        BTreeNode* child = node->children[idx];
+        BTreeNode* sibling = node->children[idx - 1];
+
+        child->keys.insert(child->keys.begin(), node->keys[idx - 1]);
+        if (!child->leaf) {
+            child->children.insert(child->children.begin(), sibling->children[sibling->children.size() - 1]);
+        }
+
+        node->keys[idx - 1] = sibling->keys[sibling->keys.size() - 1];
+        sibling->keys.pop_back();
+        if (!sibling->leaf) {
+            sibling->children.pop_back();
+        }
+    }
+
+    void borrowFromNext(BTreeNode* node, int idx) {
+        BTreeNode* child = node->children[idx];
+        BTreeNode* sibling = node->children[idx + 1];
+
+        child->keys.push_back(node->keys[idx]);
+        if (!child->leaf) {
+            child->children.push_back(sibling->children[0]);
+        }
+
+        node->keys[idx] = sibling->keys[0];
+        sibling->keys.erase(sibling->keys.begin());
+        if (!sibling->leaf) {
+            sibling->children.erase(sibling->children.begin());
+        }
+    }
+
+    void merge(BTreeNode* node, int idx) {
+        BTreeNode* child = node->children[idx];
+        BTreeNode* sibling = node->children[idx + 1];
+
+        child->keys.push_back(node->keys[idx]);
+
+        for (int i = 0; i < sibling->keys.size(); ++i) {
+            child->keys.push_back(sibling->keys[i]);
+        }
+
+        if (!child->leaf) {
+            for (int i = 0; i < sibling->children.size(); ++i) {
+                child->children.push_back(sibling->children[i]);
+            }
+        }
+
+        node->keys.erase(node->keys.begin() + idx);
+        node->children.erase(node->children.begin() + idx + 1);
+
+        delete sibling;
+    }
+
+
 public:
     BTree(int t) : root(nullptr), t(t) {}
 
@@ -271,6 +429,23 @@ public:
         }
 
         insertNonFull(root, k);
+    }
+
+    void remove(int k) {
+        if (!root) return;
+
+        remove(root, k);
+
+        if (root->keys.empty()) {
+            BTreeNode* tmp = root;
+            if (root->leaf) {
+                root = nullptr;
+            }
+            else {
+                root = root->children[0];
+            }
+            delete tmp;
+        }
     }
 
     void printTree(BTreeNode* node, int level) {
@@ -303,8 +478,9 @@ int main() {
         std::cout << "2. 從 m-way 搜尋樹刪除\n";
         std::cout << "3. 顯示 m-way 搜尋樹\n";
         std::cout << "4. 插入到 B-tree\n";
-        std::cout << "5. 顯示 B-tree\n";
-        std::cout << "6. 離開\n";
+        std::cout << "5. 從 B-tree 刪除\n";
+        std::cout << "6. 顯示 B-tree\n";
+        std::cout << "7. 離開\n";
         std::cout << "請選擇功能: ";
         std::cin >> choice;
 
@@ -329,16 +505,21 @@ int main() {
             bTree.insert(value);
             break;
         case 5:
+            std::cout << "請輸入要刪除的值: ";
+            std::cin >> value;
+            bTree.remove(value);
+            break;
+        case 6:
             std::cout << "B-tree:\n";
             bTree.printTree();
             break;
-        case 6:
+        case 7:
             std::cout << "程式結束...\n";
             break;
         default:
             std::cout << "無效的選項，請重新選擇。\n";
         }
-    } while (choice != 6);
+    } while (choice != 7);
 
     return 0;
 }
